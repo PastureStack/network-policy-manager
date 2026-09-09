@@ -8,6 +8,10 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 
 ## Status
 
+The current public release and Catalog image are `v0.3.1`. The Catalog
+template itself is versioned independently as `v0.3.2`; that template version
+does not rename or replace the immutable image tag.
+
 The default command remains a non-mutating audit compiler. `serve` is the enforcement mode used by the Catalog package. It supports live metadata reconciliation, deterministic rule compilation, an atomic nftables transaction, health status without identifiers, bounded stale-data handling, and exact cleanup.
 
 The runtime uses host networking and requires `CAP_NET_ADMIN`. It does not require the host PID namespace, a container-engine socket, a host filesystem mount, API credentials, or secret input. Ordinary shutdown preserves the last-known-good table so an image update cannot create an enforcement gap. Catalog-managed deployments use `--cleanup-on-exit`, which removes only the owned table after a graceful stack removal. Operators that prioritize continuous enforcement during an external rolling update can omit that flag and use the explicit cleanup command when uninstalling.
