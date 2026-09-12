@@ -114,6 +114,13 @@ go build -trimpath -o bin/network-policy-manager ./cmd/network-policy-manager
 
 Run `sh scripts/validate.sh` on Unix-like systems or `pwsh -File scripts/validate.ps1` on Windows for formatting, tests, vetting, module verification, and reproducible-build checks.
 
+On a disposable root VM only, set `PASTURESTACK_POLICY_VM_MODE` to the actual
+Docker firewall mode (`nftables`, `iptables-nft`, or `iptables-legacy`) and run
+`go test ./internal/enforcement -run TestOwnedPolicyTableCoexistsWithDockerFirewallOnVM`.
+The test refuses an existing policy table, applies and removes only its own
+table, and compares Docker-owned rules before and after. This coexistence
+check does not claim a complete multi-host policy-traffic or upgrade gate.
+
 ## Licensing
 
 The inherited root `LICENSE` is preserved byte-for-byte and contains the Apache License 2.0 text. Go toolchain notices used for reproducible builds are included under `LICENSES/`. See `ORIGIN.md` for the preservation and release boundary.
