@@ -10,9 +10,9 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 
 ## Status
 
-The current public release and Catalog image are `v0.3.1`. The Catalog
-template itself is versioned independently as `v0.3.2`; that template version
-does not rename or replace the immutable image tag.
+The current public release is [v0.3.2](https://github.com/PastureStack/network-policy-manager/releases/tag/v0.3.2),
+and the Catalog image is `ghcr.io/pasturestack/network-policy-manager:v0.3.2`.
+Catalog template revisions are versioned independently from image tags.
 
 The default command remains a non-mutating audit compiler. `serve` is the enforcement mode used by the Catalog package. It supports live metadata reconciliation, deterministic rule compilation, an atomic nftables transaction, health status without identifiers, bounded stale-data handling, and exact cleanup.
 
