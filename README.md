@@ -1,5 +1,7 @@
 # Network Policy Manager
 
+Current source builds use Go 1.27.3 while the Go language minimum remains 1.26.0. Ubuntu 26.04 images install the checksum-pinned `ca-certificates` 20260816ubuntu0.26.04.1 package without advancing the remaining package snapshot. These source inputs take effect in newly built artifacts; existing published release coordinates below describe their original artifacts.
+
 This repository provides a network-policy compiler and a host enforcement agent for PastureStack. The agent reads the local metadata endpoint, validates a bounded topology and policy snapshot, and installs one exact, independently owned nftables table on each host.
 
 PastureStack is an independent community effort to preserve, audit, and modernize the Rancher 1.6 ecosystem. It is not affiliated with or endorsed by Rancher Labs or SUSE.
