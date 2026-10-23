@@ -72,6 +72,7 @@ jobs:
           container=$(docker create "$image")
           trap 'docker rm "$container" >/dev/null' EXIT
           docker cp "$container:/usr/local/bin/network-policy-manager" evidence/product
+          docker cp "$container:/usr/share/pasturestack/ubuntu-security-packages.tsv" evidence/ubuntu-security-packages.tsv
           docker cp "$container:/etc/ssl/certs/ca-certificates.crt" evidence/ca-certificates.crt
           go version -m evidence/product | tee evidence/product-go-version.txt
           grep -F 'go1.27.3' evidence/product-go-version.txt
@@ -92,6 +93,7 @@ jobs:
             --exit-code 0 --format json --output /evidence/image-security.json "$TESTED_IMAGE"
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/evidence:/evidence" \
             "$TRIVY_IMAGE" image --format cyclonedx --output /evidence/image.cdx.json "$TESTED_IMAGE"
+          PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/test_runtime_vulnerability_policy.py
           python3 .github/scripts/enforce-runtime-vulnerabilities.py \
             evidence/image-security.json .github/runtime-unfixed.json \
             --repository "$GITHUB_REPOSITORY"
