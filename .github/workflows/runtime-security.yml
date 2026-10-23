@@ -1,0 +1,158 @@
+name: Runtime security baseline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: New immutable numeric tag; empty runs verification only
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: runtime-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-readback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOTOOLCHAIN: local
+      VERSION: ${{ inputs.release_tag || 'dev' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.3
+          cache: false
+      - name: Validate manual release request
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test -z "$(git status --porcelain)"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
+          tags="$(gh api --paginate "repos/$GITHUB_REPOSITORY/tags" --jq '.[].name')"
+          if grep -Fxq "$RELEASE_TAG" <<<"$tags"; then
+            echo 'The release tag already exists; refusing to overwrite it' >&2
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" --jq '
+            [.check_runs[] | select(.name == "Analyze (go)" or .name == "Analyze (actions)")]
+            | group_by(.name) | length == 2 and all(any(.conclusion == "success"))' | grep -Fx true
+
+      - name: Build and verify the final image
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(go env GOVERSION)" = go1.27.3
+          image=local/network-policy-manager:"${VERSION}"
+          bash scripts/validate.sh
+          docker build --build-arg VERSION="$VERSION" --build-arg REVISION="$GITHUB_SHA" -f package/Dockerfile -t "$image" .
+          mkdir -p evidence
+          container=$(docker create "$image")
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/usr/local/bin/network-policy-manager" evidence/product
+          docker cp "$container:/usr/share/pasturestack/ubuntu-security-packages.tsv" evidence/ubuntu-security-packages.tsv
+          docker cp "$container:/etc/ssl/certs/ca-certificates.crt" evidence/ca-certificates.crt
+          go version -m evidence/product | tee evidence/product-go-version.txt
+          grep -F 'go1.27.3' evidence/product-go-version.txt
+          test -s evidence/ca-certificates.crt
+          sha256sum evidence/product evidence/ca-certificates.crt > evidence/SHA256SUMS
+          docker run --rm --entrypoint dpkg-query "$image" -W '-f=${Version}\n' ca-certificates | tee evidence/ca-version.txt
+          grep -Fx '20260816ubuntu0.26.04.1' evidence/ca-version.txt
+          docker image inspect "$image" > evidence/image-inspect.json
+      - name: Scan the tested runtime image
+        shell: bash
+        env:
+          TRIVY_IMAGE: ghcr.io/aquasecurity/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+          TESTED_IMAGE: local/network-policy-manager:${{ inputs.release_tag || 'dev' }}
+        run: |
+          set -euo pipefail
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/evidence:/evidence" \
+            "$TRIVY_IMAGE" image --scanners vuln,secret --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --exit-code 0 --format json --output /evidence/image-security.json "$TESTED_IMAGE"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/evidence:/evidence" \
+            "$TRIVY_IMAGE" image --format cyclonedx --output /evidence/image.cdx.json "$TESTED_IMAGE"
+          PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/test_runtime_vulnerability_policy.py
+          python3 .github/scripts/enforce-runtime-vulnerabilities.py \
+            evidence/image-security.json .github/runtime-unfixed.json \
+            --repository "$GITHUB_REPOSITORY"
+
+      - name: Publish the tested image once
+        id: publish
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          TESTED_IMAGE: local/network-policy-manager:${{ inputs.release_tag || 'dev' }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
+          remote="ghcr.io/pasturestack/network-policy-manager:$RELEASE_TAG"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          if docker manifest inspect "$remote" > /dev/null 2> evidence/registry-preflight.txt; then
+            echo 'Image tag already exists; refusing to overwrite it' >&2
+            exit 1
+          fi
+          grep -Ei 'manifest unknown|no such manifest|not found' evidence/registry-preflight.txt
+          docker tag "$TESTED_IMAGE" "$remote"
+          docker push "$remote"
+          reference="$(docker image inspect --format '{{index .RepoDigests 0}}' "$remote")"
+          digest="${reference#*@}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+          printf 'image=%s\ndigest=%s\nproducer=%s\n' "$remote" "$digest" "$GITHUB_SHA" > evidence/published.txt
+          (cd evidence && sha256sum published.txt > published.sha256)
+
+      - name: Attest the published image
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/pasturestack/network-policy-manager
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+
+      - name: Record the immutable source and release
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          tag_sha="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
+            -f tag="$RELEASE_TAG" -f object="$GITHUB_SHA" -f type=commit \
+            -f message="Security refresh $RELEASE_TAG" --jq .sha)"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$RELEASE_TAG" -f sha="$tag_sha" >/dev/null
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "$RELEASE_TAG" --notes-file evidence/published.txt \
+            evidence/published.txt evidence/published.sha256 evidence/*.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: runtime-security-evidence
+          path: evidence/
+          if-no-files-found: error
