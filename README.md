@@ -1,6 +1,8 @@
 # Network Policy Manager
 
-Current source builds use Go 1.27.3 while the Go language minimum remains 1.26.0. Ubuntu 26.04 images install the checksum-pinned `ca-certificates` 20260816ubuntu0.26.04.1 package with only officially fixed, already-installed packages advanced by the reviewed security overlay. These source inputs take effect in newly built artifacts; existing published release coordinates below describe their original artifacts.
+Linux runtime **`v0.3.3`** integrates shared Ubuntu 26.04 security backports for already-installed packages while preserving the selected coreutils provider.
+
+The image retains bundle manifests, source inputs and installation receipts under `/usr/share/pasturestack/security/ubuntu-backports/`.
 
 This repository provides a network-policy compiler and a host enforcement agent for PastureStack. The agent reads the local metadata endpoint, validates a bounded topology and policy snapshot, and installs one exact, independently owned nftables table on each host.
 
@@ -10,9 +12,8 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 
 ## Status
 
-The current public release is [v0.3.2](https://github.com/PastureStack/network-policy-manager/releases/tag/v0.3.2),
-and the Catalog image is `ghcr.io/pasturestack/network-policy-manager:v0.3.2`.
-Catalog template revisions are versioned independently from image tags.
+Select `ghcr.io/pasturestack/network-policy-manager:v0.3.3` through the Catalog.
+Catalog template revisions remain independently versioned.
 
 The default command remains a non-mutating audit compiler. `serve` is the enforcement mode used by the Catalog package. It supports live metadata reconciliation, deterministic rule compilation, an atomic nftables transaction, health status without identifiers, bounded stale-data handling, and exact cleanup.
 
