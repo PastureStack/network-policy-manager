@@ -1,6 +1,6 @@
 # Network Policy Manager
 
-Linux runtime **`v0.3.3`** integrates shared Ubuntu 26.04 security backports for already-installed packages while preserving the selected coreutils provider.
+Linux runtime **`v0.3.4`** uses Go 1.27.4, Ubuntu 26.04 APT 3.2.1ubuntu0.1 and glibc 2.43-2ubuntu2.7. See the [release and SBOM](https://github.com/PastureStack/network-policy-manager/releases/tag/v0.3.4).
 
 The image retains bundle manifests, source inputs and installation receipts under `/usr/share/pasturestack/security/ubuntu-backports/`.
 
@@ -12,7 +12,7 @@ PastureStack is an independent community effort to preserve, audit, and moderniz
 
 ## Status
 
-Select `ghcr.io/pasturestack/network-policy-manager:v0.3.3` through the Catalog.
+Select `ghcr.io/pasturestack/network-policy-manager:v0.3.4` through the Catalog.
 Catalog template revisions remain independently versioned.
 
 The default command remains a non-mutating audit compiler. `serve` is the enforcement mode used by the Catalog package. It supports live metadata reconciliation, deterministic rule compilation, an atomic nftables transaction, health status without identifiers, bounded stale-data handling, and exact cleanup.
